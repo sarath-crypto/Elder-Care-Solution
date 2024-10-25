@@ -31,6 +31,7 @@ using namespace std;
 using namespace cv;
 
 enum pb{BTS_RSSI = 1,BTS_BAT,BTM_RSSI,BTM_BAT};
+enum ws{WIFI_NO =1,WIFI_OK,WIFI_FAIL};
 
 class frame_buffer{
 private:
@@ -53,7 +54,7 @@ public:
 	uptme ut;
 	frame_buffer(string,Scalar,string &);
 	~frame_buffer();
-	void drawscreen(queue<frames>&dq,vector <double> &,bool,bool,bool,bool,bool);
+	void drawscreen(queue<frames>&dq,vector <double> &,unsigned char,bool,bool,bool,bool);
 };
 
 #endif 

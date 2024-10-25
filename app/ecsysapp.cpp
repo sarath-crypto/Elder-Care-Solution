@@ -62,6 +62,7 @@
 #include "ble.h"
 #include "udps.h"
 
+#define BEACONDET_MIN	2
 #define BEACONDET_TH	20
 #define PING_TH		20
 #define BEACON_TH	4
@@ -91,12 +92,13 @@ typedef struct ipc{
 	queue <frames> fq;
 	queue <frames> dq;
 	map <string,string> mp;
+	unsigned char wifi;
 	uptme *put;
 	bool bdet;
-	bool wifi;
 	bool scon;
 	bool mcon;
 	bool alrm;
+	bool md_delay;
 	bool ad_state;
 	bool db_state;
 	bool ds_state;
@@ -211,7 +213,7 @@ void file_write(char *pdata,unsigned long len,char type){
 	}
         fs::path fp = fn;
         if(!fs::is_directory(fp.parent_path()))fs::create_directory(fp.parent_path());
-        int fd = open (fn.c_str(),O_CREAT|O_WRONLY,0006);
+        int fd = open (fn.c_str(),O_CREAT|O_WRONLY,0406);
         if(len)write(fd,pdata,len);
         close(fd);
 }
@@ -296,6 +298,7 @@ void *audioproc(void *p){
 	unsigned char prev_sm = false;
 	unsigned char ping_try = 0;
 	unsigned char beacon_det = 0;
+	ip->wifi = WIFI_NO;
 	if(!ip->mp["wifi"].compare("yes")){
 		pc = new udps(stoi(ip->mp["server_port"]));
         	if(!pc->state){
@@ -306,6 +309,7 @@ void *audioproc(void *p){
 		pc->apap_key = ip->mp["apap_key"];
 		syslog(LOG_INFO,"ecsysapp audioproc network state initialized to %d",pc->sm);
 		prev_sm = pc->sm;
+		ip->wifi = WIFI_FAIL;
 	}
 
 	unsigned char beacon = stoi(ip->mp["beacon_timeout"]);
@@ -331,7 +335,8 @@ void *audioproc(void *p){
 					pc->sm =  STOP;
 				}
 				prev_nw =  pc->con;
-				ip->wifi = pc->con;
+				if(pc->con)ip->wifi = WIFI_OK;
+				else ip->wifi = WIFI_FAIL;
 			}
 			if(pc->sm != prev_sm){
 				syslog(LOG_INFO,"ecsysapp audioproc network state changed %d\n",pc->sm);
@@ -353,7 +358,8 @@ void *audioproc(void *p){
 				       	pc->con = false;
 					pc->sm = STOP;
 				}
-				ip->wifi = pc->con;
+				if(pc->con)ip->wifi = WIFI_OK;
+				else ip->wifi = WIFI_FAIL;
 
 				string cmd = "ping -c 1 -q " + pc->rip;
 				execute(cmd);
@@ -377,15 +383,16 @@ void *audioproc(void *p){
 			else{
 				if((sb != e) && (!ip->mp["bt_feedback"].compare("yes"))){
 					if(ip->bdet){
-						beacon_det = 0;
+						if(beacon_det < BEACONDET_MIN)beacon_det++;
 						ip->bdet = false;
 						if(beacon_det >= BEACONDET_TH){
-							syslog(LOG_INFO,"ecsysapp audioproc beacon detection failed rebooting %d",beacon_det);
+							syslog(LOG_INFO,"ecsysapp audioproc beacon detection failed rebooting");
 							string cmd = "sudo reboot";
 							execute(cmd);
 						}
 					}else{
 						beacon_det++;
+						syslog(LOG_INFO,"ecsysapp audioproc beacon detection trys %d",beacon_det);
 					}
 				}
 			}
@@ -410,11 +417,17 @@ void *audioproc(void *p){
 #ifndef NO_DISPLAY_MIC
 			while(ip->alm_sync);
 #endif
+
+			ip->md_delay = true;
+			while(ip->md_delay);
+			ip->md_delay = true;
+
 			pthread_mutex_lock(&mx_lock);
-			play_wav(RING,ip);
+			if(beacon_det == BEACONDET_MIN)play_wav(RING,ip);
 			ip->alrm = false;
 			while(read(ip->fd, &ev, ev_size) > 0);
 			pthread_mutex_unlock(&mx_lock);
+			ip->md_delay = false;
 		}
       		if(!ip->ad_state)ip->ad_state = true;
         }
@@ -435,8 +448,16 @@ void *displayproc(void *p){
 	}
 	int chr = stoi(ip->mp["voice_start"]);
        	int dur = stoi(ip->mp["voice_duration"]);
-	int ehr = chr+dur;
-	if(ehr >= 24)ehr = ehr-24;
+	vector <unsigned char> durmap;
+	for(int i = 0,h = 0;i < dur;i++,h++){
+		unsigned char hr = chr+h;
+		if(hr >= 24){
+			h = 0;
+			hr = 0;
+			chr = 0;
+		}
+		durmap.push_back(hr);	
+	}
 
 	bool active = false;
 	frame_buffer fb("/dev/fb0",Scalar(0,0,0),ip->cfg);
@@ -447,8 +468,10 @@ void *displayproc(void *p){
 		pthread_mutex_lock(&mx_lock);
 		pthread_mutex_unlock(&mx_lock);
         	pthread_setschedprio(pthread_self(),255);
+	
+		if(ip->md_delay)ip->md_delay = false;
+		afft.process(!ip->md_delay && active && ip->scon);
 
-		afft.process(active);
 		ip->bdet = afft.beacon;
 
 		if(dur){
@@ -456,12 +479,18 @@ void *displayproc(void *p){
 			gettimestamp(ts,false);
 			size_t pos = ts.find(':');
 			ts = ts.substr(0,pos); 
-			unsigned char rhr = stoi(ts);
-			if(rhr  == chr)active = true;
-			if(rhr  == ehr)active = false;
+			unsigned char hr = stoi(ts);
+			for(unsigned int i = 0;i < durmap.size();i++){
+				if(durmap[i] == hr){
+					active = true;
+					break;
+				}
+				else active = false;
+			}
 			if(afft.voice && active){
 				syslog(LOG_INFO,"ecsysapp displayproc voice trigger");
 				ip->alrm = true;
+				afft.voice = false;
 			}
 		}
 		if(ip->alm_sync){
@@ -657,6 +686,7 @@ int main(int argc,char *argv[]){
 	ip.put = NULL;
 	ip.fd = - 1;
 	ip.alm_sync = false;
+	ip.md_delay = false;
 	ip.cfg.assign(argv[1]);
 
 	if(!load_config(&ip)){

@@ -75,7 +75,7 @@ void frame_buffer::getuptime(uptme *pupt){
         pupt->m = ct/60;
 }
 
-void frame_buffer::drawscreen(queue <frames> &dq,vector <double> &sig,bool wifi,bool active,bool alrm,bool scon,bool mcon){
+void frame_buffer::drawscreen(queue <frames> &dq,vector <double> &sig,unsigned char wifi,bool active,bool alrm,bool scon,bool mcon){
         frame = Mat(SCREEN_H,SCREEN_W,CV_8UC4,Scalar(0,0,0));
 	rectangle(frame,Point(10,10),Point(790,405),Scalar(255,255,0),2,LINE_AA);
 	
@@ -122,17 +122,28 @@ void frame_buffer::drawscreen(queue <frames> &dq,vector <double> &sig,bool wifi,
 		}
 		val = "Wireless WiFi  Link: ";
 		putText(frame,val,Point(15,140),FONT_HERSHEY_COMPLEX,1.48,Scalar(0,255,0),1);
-		if(wifi){
+
+		switch(wifi){
+		case(WIFI_NO):{
+			val = "NO";
+			putText(frame,val,Point(610,140),FONT_HERSHEY_COMPLEX,1.48,Scalar(0,255,0),1);
+			break;
+		}
+		case(WIFI_OK):{
 			val = "OK";
 			putText(frame,val,Point(610,140),FONT_HERSHEY_COMPLEX,1.48,Scalar(0,255,0),1);
-		}else if(blink){
+			break;
+		}
+		case(WIFI_FAIL):{
 			val = "FAILED";
-			putText(frame,val,Point(610,140),FONT_HERSHEY_COMPLEX,1.48,Scalar(0,0,255),1);
+			if(blink)putText(frame,val,Point(610,140),FONT_HERSHEY_COMPLEX,1.48,Scalar(0,0,255),1);
+			break;
+		}
 		}
 
 		val = "VOICE";
-		Scalar col = Scalar(255,255,0);
-		if(!active)col = Scalar(0,255,0);
+		Scalar col = Scalar(0,255,0);
+		if(active && scon)col = Scalar(255,255,0);
 		putText(frame,val,Point(15,390),FONT_HERSHEY_COMPLEX,1.48,col,1);
 
 		if(sig.size()){

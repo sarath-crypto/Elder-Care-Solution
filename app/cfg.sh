@@ -12,7 +12,7 @@ done
 #.bashrc
 #cmd=$(pgrep ecsysapp)
 #if [ -z "$cmd" ]; then
-#        /home/ecsys/v4/keep_alive.sh &
+#        /home/ecsys/app/keep_alive.sh &
 #        tput civis
 #        PS1=""
 #fi

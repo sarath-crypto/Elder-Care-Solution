@@ -4,7 +4,6 @@
 #include <iostream>
 #include <fstream>
 #include <math.h>
-#include <fftw3.h>
 #include <assert.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -12,6 +11,8 @@
 #include <pulse/simple.h>
 #include <pulse/error.h>
 #include <math.h>
+#include <vector>
+
 #include "fb.h"
 #include "filters.h"
 #include "kissfft/kiss_fftr.h"
@@ -33,6 +34,7 @@ private:
 	kiss_fft_cpx out[FFT_SZ/2 + 1];
 
 	double cth;
+	vector <unsigned short>discard;
 public:
         vector <double> sig;
 	bool en;
