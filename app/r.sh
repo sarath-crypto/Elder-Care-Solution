@@ -1,2 +1,2 @@
-rm log.txt
+rm ./log.txt -rf
 ./ecsysapp /home/ecsys/app/config.ini

@@ -98,7 +98,9 @@ typedef struct ipc{
 	bool scon;
 	bool mcon;
 	bool alrm;
-	bool md_delay;
+	bool ad_lock;
+	bool db_lock;
+	bool mn_lock;
 	bool ad_state;
 	bool db_state;
 	bool ds_state;
@@ -320,8 +322,10 @@ void *audioproc(void *p){
 	syslog(LOG_INFO,"ecsysapp started audioproc");
         
 	while(!exit_audioproc){
+		ip->ad_lock = true;
 		pthread_mutex_lock(&mx_lock);
 		pthread_mutex_unlock(&mx_lock);
+		ip->ad_lock = false;
         	pthread_setschedprio(pthread_self(),253);
 		e = time(NULL);
 
@@ -413,21 +417,16 @@ void *audioproc(void *p){
 			}
 			struct input_event ev;
 			int ev_size = sizeof(struct input_event);
+			
 			ip->alm_sync = true;
-#ifndef NO_DISPLAY_MIC
 			while(ip->alm_sync);
-#endif
-
-			ip->md_delay = true;
-			while(ip->md_delay);
-			ip->md_delay = true;
 
 			pthread_mutex_lock(&mx_lock);
+			while(!(ip->mn_lock & ip->db_lock));
 			if(beacon_det == BEACONDET_MIN)play_wav(RING,ip);
 			ip->alrm = false;
 			while(read(ip->fd, &ev, ev_size) > 0);
 			pthread_mutex_unlock(&mx_lock);
-			ip->md_delay = false;
 		}
       		if(!ip->ad_state)ip->ad_state = true;
         }
@@ -447,7 +446,9 @@ void *displayproc(void *p){
 		sighandler(0);
 	}
 	int chr = stoi(ip->mp["voice_start"]);
+	if(chr > 23)chr = 23;
        	int dur = stoi(ip->mp["voice_duration"]);
+	if(dur > 24)dur = 24;
 	vector <unsigned char> durmap;
 	for(int i = 0,h = 0;i < dur;i++,h++){
 		unsigned char hr = chr+h;
@@ -465,15 +466,9 @@ void *displayproc(void *p){
         syslog(LOG_INFO,"ecsysapp started displayproc");
 
         while(!exit_displayproc){
-		pthread_mutex_lock(&mx_lock);
-		pthread_mutex_unlock(&mx_lock);
-        	pthread_setschedprio(pthread_self(),255);
-	
-		if(ip->md_delay)ip->md_delay = false;
-		afft.process(!ip->md_delay && active && ip->scon);
-
+		pthread_setschedprio(pthread_self(),255);
+		afft.process(active && ip->scon,ip->alrm);
 		ip->bdet = afft.beacon;
-
 		if(dur){
 			string ts;
 			gettimestamp(ts,false);
@@ -560,10 +555,12 @@ void *dbproc(void *p){
 
         syslog(LOG_INFO,"ecsysapp started dbproc");
         while(!exit_dbproc){
+		ip->db_lock = true;
 		pthread_mutex_lock(&mx_lock);
 		pthread_mutex_unlock(&mx_lock);
+		ip->db_lock = false;
         	pthread_setschedprio(pthread_self(),254);
-
+		
    		FD_ZERO(&readfds);
                 FD_SET(ip->fd,&readfds);
                 int ev_size = sizeof(struct input_event);
@@ -680,13 +677,15 @@ int main(int argc,char *argv[]){
 	ip.scon = false;
 	ip.mcon = false;
 	ip.alrm = false;
+	ip.db_lock = false;
+	ip.ad_lock = false;
+	ip.mn_lock = false;
 	ip.db_state = false;
 	ip.ds_state = false;
 	ip.ad_state = false;
 	ip.put = NULL;
-	ip.fd = - 1;
+	ip.fd = -1;
 	ip.alm_sync = false;
-	ip.md_delay = false;
 	ip.cfg.assign(argv[1]);
 
 	if(!load_config(&ip)){
@@ -727,8 +726,10 @@ int main(int argc,char *argv[]){
 	Mat frame;
 	syslog(LOG_INFO,"ecsysapp initialized");
         while(!exit_main){
+		ip.mn_lock = true;
 		pthread_mutex_lock(&mx_lock);
 		pthread_mutex_unlock(&mx_lock);
+		ip.mn_lock = false;
 		
 		if(!pcam->get_frame(frame)){
 			ferror++;

@@ -43,7 +43,7 @@ public:
 
 	fft(unsigned char,unsigned short);
 	~fft();
-	void process(bool);
+	void process(bool,bool);
 };
 
 #endif 

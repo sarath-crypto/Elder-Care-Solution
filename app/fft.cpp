@@ -19,8 +19,6 @@
 #include "fb.h"
 
 #define FFT_SZ		1024
-#define BEACON_FREQ	128
-#define BEEP_FREQ	251
 
 using namespace std;
 
@@ -46,44 +44,24 @@ fft::fft(unsigned char n,unsigned short vth){
 	execute(cmd);
 	if(cmd.length())en = false;
 
-	discard.push_back(17);
-	discard.push_back(19);
-	discard.push_back(32);
-	discard.push_back(33);
-	discard.push_back(38);
-	discard.push_back(41);
-	discard.push_back(42);
-	discard.push_back(45);
-	discard.push_back(47);
-	discard.push_back(49);
-	discard.push_back(50);
-	discard.push_back(53);
-	discard.push_back(54);
-	discard.push_back(55);
-	discard.push_back(57);
-	discard.push_back(58);
-	discard.push_back(64);
 	discard.push_back(127);
 	discard.push_back(128);
 	discard.push_back(129);
-	discard.push_back(249);
-	discard.push_back(250);
-	discard.push_back(251);
-	discard.push_back(252);
+	discard.push_back(255);
 	discard.push_back(256);
 	discard.push_back(257);
-
 }
 
-void fft::process(bool active){
+void fft::process(bool active,bool flsh){
 	int error;
-	voice = false;
 	short buf[FFT_SZ];
+	if(flsh && (pa_simple_flush(s,&error) < 0))syslog(LOG_INFO,"fft flush failed %s\n", pa_strerror(error));
 	
-	if (pa_simple_read(s, buf, sizeof(buf), &error) < 0){
+	if (pa_simple_read(s,buf, sizeof(buf), &error) < 0){
             	syslog(LOG_INFO,"fft pa_simple_read() failed: %s\n", pa_strerror(error));
 		en = false;
 	}
+
 	for(int i = 0;i < FFT_SZ;i++)in[i]  = (double)phpf->do_sample((double)buf[i]);
 	kiss_fftr(cfg,in,out);
 	for (int i = 0; i < FFT_SZ/2;i++)sig.push_back((double)(20*log(sqrt((out[i].r*out[i].r)+(out[i].i*out[i].i))))/(double)FFT_SZ/2);
@@ -95,10 +73,10 @@ void fft::process(bool active){
 	for(unsigned int i = 0;i < discard.size();i++){
 		if(discard[i] == pos){
 			beacon = true;
-			voice = false;
 			return;
-		}
+		}	
 	}
+
 	if(active && (sig[pos]*1000 > cth))voice = true;
 }
 
