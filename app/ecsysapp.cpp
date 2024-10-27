@@ -388,15 +388,17 @@ void *audioproc(void *p){
 				if((sb != e) && (!ip->mp["bt_feedback"].compare("yes"))){
 					if(ip->bdet){
 						if(beacon_det < BEACONDET_MIN)beacon_det++;
+						else beacon_det = BEACONDET_MIN;
 						ip->bdet = false;
-						if(beacon_det >= BEACONDET_TH){
-							syslog(LOG_INFO,"ecsysapp audioproc beacon detection failed rebooting");
-							string cmd = "sudo reboot";
-							execute(cmd);
-						}
+					
 					}else{
 						beacon_det++;
 						syslog(LOG_INFO,"ecsysapp audioproc beacon detection trys %d",beacon_det);
+					}
+					if(beacon_det >= BEACONDET_TH){
+						syslog(LOG_INFO,"ecsysapp audioproc beacon detection failed rebooting");
+						string cmd = "sudo reboot";
+						execute(cmd);
 					}
 				}
 			}
