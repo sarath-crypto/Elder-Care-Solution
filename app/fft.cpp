@@ -77,12 +77,7 @@ void fft::process(bool active,bool flsh){
 		}	
 	}
 
-	if(active && (sig[pos]*1000 > cth)){
-		voice = true;
-		string d = "echo ";
-		d += to_string(pos) + " >> log.txt";
-		system(d.c_str());
-	}
+	if(active && (sig[pos]*1000 > cth))voice = true;
 }
 
 fft::~fft(){

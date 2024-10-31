@@ -122,8 +122,9 @@ int main(){
         openlog("secapp",LOG_CONS | LOG_PID | LOG_NDELAY, LOG_USER);
         syslog (LOG_NOTICE, "secapp started by uid %d", getuid ());
 
+	syscam *pcam = new syscam("no");
+
 	Mat frame;
-        syscam *pcam = new syscam(NO_CAMERA);
         unsigned char ferror = 0;
 
         pthread_t th_imgproc_id;

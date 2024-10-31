@@ -107,6 +107,7 @@ typedef struct ipc{
 	bool alm_sync;
 	int fd;
 	string cfg;
+	short audio_in;
 }ipc;
 
 enum	wav_type{BLIP = 1,BEEP,RING};
@@ -371,6 +372,7 @@ void *audioproc(void *p){
 					ping_try = 0;
 				}else{
 					ping_try++;
+					syslog(LOG_INFO,"ecsysapp audioproc ping trys %d",ping_try);
 					if(ping_try >= PING_TH){
 						syslog(LOG_INFO,"ecsysapp audioproc ping try failed rebooting %d",ping_try);
 						cmd = "sudo reboot";
@@ -390,15 +392,14 @@ void *audioproc(void *p){
 						if(beacon_det < BEACONDET_MIN)beacon_det++;
 						else beacon_det = BEACONDET_MIN;
 						ip->bdet = false;
-					
 					}else{
 						beacon_det++;
 						syslog(LOG_INFO,"ecsysapp audioproc beacon detection trys %d",beacon_det);
-					}
-					if(beacon_det >= BEACONDET_TH){
-						syslog(LOG_INFO,"ecsysapp audioproc beacon detection failed rebooting");
-						string cmd = "sudo reboot";
-						execute(cmd);
+						if(beacon_det >= BEACONDET_TH){
+							syslog(LOG_INFO,"ecsysapp audioproc beacon detection failed rebooting");
+							string cmd = "sudo reboot";
+							execute(cmd);
+						}	
 					}
 				}
 			}
@@ -440,9 +441,8 @@ void *audioproc(void *p){
 
 void *displayproc(void *p){
 	ipc *ip = (ipc *)p;
-	unsigned char n = stoi(ip->mp["sound_index"]);
 	unsigned char cth = stoi(ip->mp["voice_threshold"]);
-	fft afft(n,cth);
+	fft afft(ip->audio_in,cth);
 	if(!afft.en){
         	syslog(LOG_INFO,"ecsysapp displayproc failed on fft");
 		sighandler(0);
@@ -502,30 +502,11 @@ void *displayproc(void *p){
 }
 
 void *dbproc(void *p){
-        struct input_event ev;
-        char name[256] = "Unknown";
-        fd_set readfds;
 	ipc *ip = (ipc *)p;
+	
+	struct input_event ev;
+        fd_set readfds;
 	unsigned char mlvl = stoi(ip->mp["mouse_level"]);
-     	ip->fd = - 1; 
-        for(int  i = 0;i <= MAX_MOUSE_IDX;i++){
-		string fn =  string(MOUSE_PATH) + to_string(i);	
-		ip->fd = open(fn.c_str(), O_RDONLY | O_NONBLOCK);
-        	if (ip->fd == -1)continue;
-        	ioctl(ip->fd, EVIOCGNAME(sizeof(name)), name);
-		string mname(name);
-		mname.erase(remove(mname.begin(),mname.end(),' '),mname.end());
-		ip->mp["mouse_name"].erase(remove(ip->mp["mouse_name"].begin(),ip->mp["mouse_name"].end(),' '),ip->mp["mouse_name"].end());
-		if(!mname.compare(ip->mp["mouse_name"])){
-			ip->mcon = true;
-			break;
-		}else close(ip->fd);
-	} 
-	if(!ip->mcon){
-                syslog(LOG_INFO,"ecsysapp dbproc failed mouse not found");
-		sighandler(0);
-	}
-
         struct timeval tv;
         tv.tv_sec = 1;
         tv.tv_usec = 0;
@@ -665,13 +646,13 @@ int main(int argc,char *argv[]){
         umask(0);
         sid = setsid();
         if(sid < 0)exit(1);
-        close(STDIN_FILENO);
-        close(STDOUT_FILENO);
-        close(STDERR_FILENO);
 #endif
         signal(SIGINT,sighandler);
         openlog("ecsysapp",LOG_CONS | LOG_PID | LOG_NDELAY, LOG_USER);
         syslog (LOG_NOTICE, "ecsysapp started with uid %d", getuid ());
+        close(STDIN_FILENO);
+        close(STDOUT_FILENO);
+        close(STDERR_FILENO);
 
 	ipc ip;
 	ip.bdet = false;
@@ -689,24 +670,76 @@ int main(int argc,char *argv[]){
 	ip.fd = -1;
 	ip.alm_sync = false;
 	ip.cfg.assign(argv[1]);
+	ip.audio_in = -1;
+
 
 	if(!load_config(&ip)){
-        	syslog (LOG_INFO, "ecsysapp failed to load configuration file");
-		return 1;
+        	syslog (LOG_NOTICE,"ecsysapp failed to load configuration file\n");
+		return 0;
 	}
 	pthread_mutex_init(&mx_lock,NULL);
-	syscam *pcam = NULL;
-	
-	if(!ip.mp["camera"].compare("usb")){
-		pcam = new syscam(USB_CAMERA);
-	}else if(!ip.mp["camera"].compare("pi")){
-		pcam = new syscam();
-	}else{
-		pcam = new syscam(NO_CAMERA);
-	}
-        MotionDetector detector(1,0.2,20,0.1,5,10,2);
-	unsigned char ferror = 0;
 
+        char name[256] = "Unknown";
+     	ip.fd = -1; 
+        for(int  i = 0;i <= MAX_MOUSE_IDX;i++){
+		string fn =  string(MOUSE_PATH) + to_string(i);	
+		ip.fd = open(fn.c_str(), O_RDONLY | O_NONBLOCK);
+        	if (ip.fd == -1)continue;
+        	ioctl(ip.fd, EVIOCGNAME(sizeof(name)), name);
+		string mname(name);
+		mname.erase(remove(mname.begin(),mname.end(),' '),mname.end());
+		ip.mp["mouse_name"].erase(remove(ip.mp["mouse_name"].begin(),ip.mp["mouse_name"].end(),' '),ip.mp["mouse_name"].end());
+		if(!mname.compare(ip.mp["mouse_name"])){
+			ip.mcon = true;
+			break;
+		}else close(ip.fd);
+	} 
+	if(!ip.mcon){
+        	syslog (LOG_NOTICE,"ecsysapp failed mouse not found\n");
+		return 0;
+	}
+
+	syscam *pcam = new syscam(ip.mp["camera"]);
+	if(!ip.mp["camera"].compare("no")){
+        	syslog (LOG_NOTICE,"ecsysapp camera not configured\n");
+	}else if(pcam->type == NO_CAMERA){
+        	syslog (LOG_NOTICE,"ecsysapp failed camera not found\n");
+		return 0;
+	}
+
+	string cmd = "pactl list sources";
+	string data;
+    	FILE *stream;
+    	const int max_buffer = 256;
+    	char buffer[max_buffer];
+    	cmd.append(" 2>&1"); 
+
+    	stream = popen(cmd.c_str(),"r");
+    	if(stream){
+        	while(!feof(stream))
+            	if(fgets(buffer, max_buffer, stream) != NULL)data.append(buffer);
+        	pclose(stream);
+    	}
+	stringstream ss(data.c_str());
+	string sp;
+	vector <string> lines;
+	while(getline(ss,sp,'\n'))lines.push_back(sp);
+	for(unsigned int i = 0;i < lines.size();i++){
+		if((lines[i].find("Source") != std::string::npos) && (lines[i+2].find("alsa_input") != std::string::npos)){
+			size_t pos = lines[i].find('#');
+			if(pos != std::string::npos){
+        			ip.audio_in = stoi(lines[i].substr(pos+1));
+				break;
+			}
+		}
+	}
+	if(ip.audio_in <  0){
+        	syslog (LOG_NOTICE,"ecsysapp failed audio input not found\n");
+		return 0;
+	}
+
+	MotionDetector detector(1,0.2,20,0.1,5,10,2);
+	unsigned char ferror = 0;
 
         pthread_t th_audioproc_id;
         pthread_t th_dbproc_id;
@@ -724,7 +757,10 @@ int main(int argc,char *argv[]){
 #ifndef NO_DISPLAY_MIC
 	while(!ip.ds_state);
 #endif
-
+	ip.put->d = 0;
+	ip.put->h = 0;
+	ip.put->m = 0;
+ 
 	Mat frame;
 	syslog(LOG_INFO,"ecsysapp initialized");
         while(!exit_main){

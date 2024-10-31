@@ -120,21 +120,18 @@ void frame_buffer::drawscreen(queue <frames> &dq,vector <double> &sig,unsigned c
 			val = "FAILED";
 			putText(frame,val,Point(610,100),FONT_HERSHEY_COMPLEX,1.48,Scalar(0,0,255),1);
 		}
-		val = "Wireless WiFiAlarm: ";
-		putText(frame,val,Point(15,140),FONT_HERSHEY_COMPLEX,1.48,Scalar(0,255,0),1);
 
 		switch(wifi){
-		case(WIFI_NO):{
-			val = "NO";
-			putText(frame,val,Point(610,140),FONT_HERSHEY_COMPLEX,1.48,Scalar(0,255,0),1);
-			break;
-		}
 		case(WIFI_OK):{
-			val = "OK";
+			val = "Wireless WiFiAlarm: ";
+			putText(frame,val,Point(15,140),FONT_HERSHEY_COMPLEX,1.48,Scalar(0,255,0),1);
+	      		val = "OK";
 			putText(frame,val,Point(610,140),FONT_HERSHEY_COMPLEX,1.48,Scalar(0,255,0),1);
 			break;
 		}
 		case(WIFI_FAIL):{
+			val = "Wireless WiFiAlarm: ";
+			putText(frame,val,Point(15,140),FONT_HERSHEY_COMPLEX,1.48,Scalar(0,255,0),1);
 			val = "FAILED";
 			if(blink)putText(frame,val,Point(610,140),FONT_HERSHEY_COMPLEX,1.48,Scalar(0,0,255),1);
 			break;
